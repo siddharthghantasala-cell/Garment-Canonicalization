@@ -1,0 +1,9 @@
+# The data-source ablation (Tier 2). Same settings, only data_roots changes.
+# Launch each with:  python scripts/03_finetune.py configs/finetune_lora.yaml out_dir=<..> data_roots=<..>
+runs:
+  proc_only:
+    data_roots: [data/synthetic/procedural_train]
+  gen_only:
+    data_roots: [data/synthetic/generative_train]
+  mixed:
+    data_roots: [data/synthetic/procedural_train, data/synthetic/generative_train]

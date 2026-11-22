@@ -1,0 +1,30 @@
+# Procedural (crumpled input, clean target) pairs, on CPUs: no GPU needed.
+# Measured ~1.25 s per crumple per core: train (11,552 x 3) ~12 core-hours -> ~45 min on 16 cores.
+# Writes synthetic_procedural_<split>.tar.gz into your /staging folder.
+# Submit from your work folder (see chtc/README.md):   condor_submit garment-canon/chtc/make_synthetic.sub
+STAGING = osdf:///chtc/staging/CHANGE_ME
+
+universe        = container
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+executable      = garment-canon/chtc/run_job.sh
+arguments       = garment-canon/scripts/02_make_synthetic.py --viton VITON-HD --split $(split) --variants $(variants) --pairs-file $(pairs) --workers 16 --out data/synthetic
+environment     = "EXTRAS=dev PACK=synthetic_procedural_$(split).tar.gz:data/synthetic/procedural_$(split)"
+
+transfer_input_files    = garment-canon.tar.gz, $(STAGING)/VITON-HD.tar.gz, extra
+transfer_output_files   = synthetic_procedural_$(split).tar.gz
+transfer_output_remaps  = "synthetic_procedural_$(split).tar.gz = $(STAGING)/synthetic_procedural_$(split).tar.gz"
+
+log    = logs/synthetic_$(split)_$(Cluster).log
+output = logs/synthetic_$(split)_$(Cluster).out
+error  = logs/synthetic_$(split)_$(Cluster).err
+
+request_cpus   = 16
+request_memory = 32GB
+request_disk   = 60GB
+
+# pairs: VITON-HD's own lists by default. If you have TryOffDiff's cleaned lists (11,552 / 1,990
+# pairs), put them in extra/ and change these paths to extra/<file>.
+queue split, variants, pairs from (
+  train 3 VITON-HD/train_pairs.txt
+  test  1 VITON-HD/test_pairs.txt
+)

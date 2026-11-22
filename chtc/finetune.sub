@@ -1,0 +1,39 @@
+# Fine-tuning with exit-driven checkpointing (CHTC "Checkpointing Jobs" guide):
+# the trainer runs CHUNK steps, saves into run_<RUN>/, exits with code 85; HTCondor saves that
+# folder and restarts the job, so it continues by itself until max_steps (then exit 0). If the
+# job is evicted, it restarts elsewhere from the last saved chunk: at most one chunk is lost.
+# When it finishes, run_<RUN>/ appears in your work folder.
+# Submit from your work folder (see chtc/README.md):   condor_submit garment-canon/chtc/finetune.sub
+STAGING    = osdf:///chtc/staging/CHANGE_ME
+RUN        = proc_only
+# Ablation runs: change RUN, DATA_FILES and DATA_ROOTS together (no spaces inside DATA_ROOTS), e.g.
+#   RUN = mixed
+#   DATA_FILES = $(STAGING)/synthetic_procedural_train.tar.gz, $(STAGING)/synthetic_generative_train.tar.gz
+#   DATA_ROOTS = [data/synthetic/procedural_train,data/synthetic/generative_train]
+DATA_FILES = $(STAGING)/synthetic_procedural_train.tar.gz
+DATA_ROOTS = [data/synthetic/procedural_train]
+CHUNK      = 1500
+
+universe        = container
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+executable      = garment-canon/chtc/run_job.sh
+arguments       = garment-canon/scripts/03_finetune.py garment-canon/configs/finetune_lora.yaml out_dir=run_$(RUN) data_roots=$(DATA_ROOTS) max_steps_this_run=$(CHUNK) keep_every=3000 pause_exit_code=85
+
+transfer_input_files      = garment-canon.tar.gz, $(DATA_FILES)
+checkpoint_exit_code      = 85
+transfer_checkpoint_files = run_$(RUN)
+transfer_output_files     = run_$(RUN)
+
+log    = logs/finetune_$(RUN)_$(Cluster).log
+output = logs/finetune_$(RUN)_$(Cluster).out
+error  = logs/finetune_$(RUN)_$(Cluster).err
+
+request_gpus        = 1
++WantGPULab         = true
++GPUJobLength       = "short"
+gpus_minimum_memory = 40000
+request_cpus        = 8
+request_memory      = 48GB
+request_disk        = 60GB
+
+queue 1

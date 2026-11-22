@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garmentcanon"
+version = "0.1.0"
+description = "Garment canonicalization: casual off-body garment photos -> canonical catalog images (CS 566 project)"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy", "opencv-python-headless", "scipy", "pillow", "pillow-heif", "pyyaml",
+]
+
+[project.optional-dependencies]
+gpu = [
+  "torch>=2.2", "torchvision", "diffusers>=0.35", "transformers>=4.45", "accelerate",
+  "huggingface_hub", "peft>=0.12", "bitsandbytes", "lpips", "piq", "torchmetrics[image]", "torch-fidelity",
+]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Only tests/ holds tests. Without this, pytest also collects scripts/smoke_test.py (its name
+# matches pytest's *_test.py pattern), which needs PyTorch and errors on a CPU-only install.
+testpaths = ["tests"]

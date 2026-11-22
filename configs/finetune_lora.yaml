@@ -1,0 +1,22 @@
+# Default run: LoRA on the U-Net + full training of the small SigLIP adapter.
+# Override any key from the command line: key=value
+out_dir: runs/lora_mixed
+data_roots:
+  - data/synthetic/procedural_train
+  - data/synthetic/generative_train     # remove this line until you've generated it
+mode: lora            # lora | full | adapter (U-Net frozen: cheapest ablation)
+lora_rank: 16
+lora_alpha: 16
+lr: 1.0e-4            # LoRA tolerates higher LR than full fine-tuning (use ~1e-5 for full)
+weight_decay: 0.01
+batch_size: 8         # 8 fits an A100-40GB with grad checkpointing; drop to 4 on an L4 and set grad_accum: 2
+grad_accum: 1
+max_steps: 6000       # counts micro-batches (one per batch_size samples)
+max_steps_this_run: 1000000000   # set e.g. 1500 on CHTC short slots: job stops cleanly, resubmit resumes
+cond_dropout: 0.1     # randomly blank the condition so classifier-free guidance works at inference
+grad_checkpointing: true
+num_workers: 4
+log_every: 50
+save_every: 500
+keep_every: 1500      # besides the 2 newest checkpoints, keep every 1500th (quality-vs-steps plots)
+seed: 0

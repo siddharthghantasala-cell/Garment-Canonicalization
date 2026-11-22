@@ -1,0 +1,19 @@
+# data and outputs (big; VITON-HD license is research-only)
+VITON-HD/
+data/
+outputs/
+runs/
+third_party/
+
+# environment and editor files
+.idea/
+.pytest_cache/
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+
+# model weights and checkpoints
+*.pt
+*.safetensors
+*.ckpt

@@ -1,0 +1,27 @@
+# Tier 1 pilot: TryOffDiff zero-shot on crumpled VITON-HD garments + your real photos.
+# Submit from your work folder (see chtc/README.md):   condor_submit garment-canon/chtc/pilot.sub
+STAGING = osdf:///chtc/staging/CHANGE_ME
+# Set after the sanity check, e.g. "--sampler pndm --steps 50 --guidance 2.0"
+SAMPLER_ARGS =
+
+universe        = container
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+executable      = garment-canon/chtc/run_job.sh
+arguments       = garment-canon/scripts/01_pilot_zero_shot.py --viton VITON-HD --real real --count 200 --out outputs/pilot $(SAMPLER_ARGS)
+
+transfer_input_files  = garment-canon.tar.gz, $(STAGING)/VITON-HD.tar.gz, real
+transfer_output_files = outputs
+
+log    = logs/pilot_$(Cluster).log
+output = logs/pilot_$(Cluster).out
+error  = logs/pilot_$(Cluster).err
+
+request_gpus        = 1
++WantGPULab         = true
++GPUJobLength       = "short"
+gpus_minimum_memory = 16000
+request_cpus        = 4
+request_memory      = 24GB
+request_disk        = 60GB
+
+queue 1

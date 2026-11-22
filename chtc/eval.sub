@@ -1,0 +1,37 @@
+# Evaluate one checkpoint (or zero-shot TryOffDiff): canonicalization metrics + try-on + scores.
+# Needs VITON-HD.tar.gz (the official release includes test/agnostic-mask/),
+# and CatVTON cloned into garment-canon/third_party/CatVTON BEFORE you create garment-canon.tar.gz.
+# The try-on baselines (clean / raw) are computed once and kept in tryon/ in your work folder,
+# so run eval jobs one at a time.
+# Submit from your work folder:   condor_submit garment-canon/chtc/eval.sub
+STAGING = osdf:///chtc/staging/CHANGE_ME
+# Zero-shot baseline: RUN = none (create an empty folder once: mkdir run_none).
+# A checkpoint:       RUN = proc_only  and  STEP = 6000   (uses run_proc_only/step_6000.pt)
+RUN     = none
+STEP    = 6000
+# Set after the sanity check, e.g. "--sampler pndm --steps 50 --guidance 2.0"
+SAMPLER_ARGS =
+TEST_FILES = $(STAGING)/synthetic_procedural_test.tar.gz
+
+universe        = container
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+executable      = garment-canon/chtc/run_job.sh
+arguments       = garment-canon/chtc/eval_all.sh $(RUN) $(STEP) $(SAMPLER_ARGS)
+
+# real, tryon and run_none are folders in your work folder (create once: mkdir real tryon run_none)
+transfer_input_files  = garment-canon.tar.gz, $(STAGING)/VITON-HD.tar.gz, $(TEST_FILES), real, tryon, run_$(RUN)
+transfer_output_files = outputs, tryon
+
+log    = logs/eval_$(RUN)_$(Cluster).log
+output = logs/eval_$(RUN)_$(Cluster).out
+error  = logs/eval_$(RUN)_$(Cluster).err
+
+request_gpus        = 1
++WantGPULab         = true
++GPUJobLength       = "medium"
+gpus_minimum_memory = 24000
+request_cpus        = 4
+request_memory      = 32GB
+request_disk        = 80GB
+
+queue 1
