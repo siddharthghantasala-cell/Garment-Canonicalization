@@ -1,9 +1,10 @@
-# data and outputs (big; VITON-HD license is research-only)
-VITON-HD/
-data/
-outputs/
-runs/
-third_party/
+# big data and outputs at the repo root only (the leading / matters:
+# a bare "data/" would also hide the code package src/garmentcanon/data/)
+/VITON-HD/
+/data/
+/outputs/
+/runs/
+/third_party/
 
 # environment and editor files
 .idea/
