@@ -65,15 +65,36 @@ def train(cfg: dict) -> dict:
     if cfg.get("grad_checkpointing", not smoke):
         c.net.unet.enable_gradient_checkpointing()
 
-    opt = torch.optim.AdamW(params, lr=float(cfg["lr"]), weight_decay=cfg.get("weight_decay", 0.01))
+    # Two learning rates: the pretrained adapter is the model's whole interface to the condition,
+    # so it gets a much smaller lr than the fresh LoRA weights (adapter_lr_mult: 0 = frozen).
+    lr, mult = float(cfg["lr"]), float(cfg.get("adapter_lr_mult", 0.1))
+    named = [(n, p) for n, p in c.net.named_parameters() if p.requires_grad]
+    unet_p = [p for n, p in named if n.startswith("unet.")]
+    adapter_p = [p for n, p in named if not n.startswith("unet.")]
+    if mult == 0:
+        for p in adapter_p:
+            p.requires_grad_(False)                 # not trained -> not saved in checkpoints either
+        adapter_p = []
+    groups = [{"params": ps, "lr": glr, "base_lr": glr, "weight_decay": wd} for ps, glr, wd in
+              [(unet_p, lr, cfg.get("weight_decay", 0.01)), (adapter_p, lr * mult, 0.0)] if ps]
+    params = [p for g in groups for p in g["params"]]
+    opt = torch.optim.AdamW(groups)
+    warmup = int(cfg.get("warmup_updates", 100))   # optimizer updates, not micro-batches
+    print(f"[optim] lora/unet lr {lr:g}, adapter lr {lr * mult:g}, warmup {warmup} updates", flush=True)
     data = SyntheticPairs(cfg["data_roots"], size=512)
-    dl = DataLoader(data, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg.get("num_workers", 4),
-                    drop_last=True, pin_memory=dev.startswith("cuda"), persistent_workers=False)
 
     # ---- resume ---------------------------------------------------------------------
     step = 0
     if _ckpts(out):
         st = torch.load(_ckpts(out)[-1], map_location="cpu", weights_only=False)
+        # Refuse to mix runs: optimizer.load_state_dict() would silently bring back the OLD lr,
+        # and the weights would continue from the old run.
+        old = st.get("cfg", {})
+        keys = ("lr", "adapter_lr_mult", "mode", "lora_rank", "lora_alpha", "batch_size", "grad_accum",
+                "data_roots", "cond_dropout", "warmup_updates")
+        diff = {k: (old.get(k), cfg.get(k)) for k in keys if str(old.get(k)) != str(cfg.get(k))}
+        if diff:
+            raise SystemExit(f"[resume] {out} holds a run with other settings {diff}: use a new out_dir")
         missing, unexpected = c.net.load_state_dict(st["net"], strict=False)
         assert not unexpected, unexpected[:5]
         opt.load_state_dict(st["opt"]); step = st["step"]
@@ -81,6 +102,11 @@ def train(cfg: dict) -> dict:
         print(f"[resume] {_ckpts(out)[-1].name}", flush=True)
     else:
         resume_scaler = None
+    # Re-seed from the step: with a fixed seed every resumed chunk would replay the same data
+    # order, noise and timesteps, i.e. train on the same first few thousand pairs again.
+    torch.manual_seed(cfg.get("seed", 0) + step)
+    dl = DataLoader(data, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg.get("num_workers", 4),
+                    drop_last=True, pin_memory=dev.startswith("cuda"), persistent_workers=False)
 
     accum, total = cfg.get("grad_accum", 1), cfg["max_steps"]
     use_amp = dev.startswith("cuda")
@@ -106,8 +132,13 @@ def train(cfg: dict) -> dict:
                 pred = c.net(zt, t, cond)
             loss = F.mse_loss(pred.float(), eps)
             scaler.scale(loss / accum).backward()
+            if step == start and not any(p.grad is not None for p in params):
+                raise RuntimeError("no gradients reached the trainable parameters (try grad_checkpointing=false)")
 
             if (step + 1) % accum == 0:
+                upd = (step + 1) // accum                       # 1-based optimizer-update count
+                for g in opt.param_groups:                      # linear warmup; also re-applies cfg lr
+                    g["lr"] = g["base_lr"] * min(1.0, upd / max(warmup, 1))
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
                 scaler.step(opt); scaler.update(); opt.zero_grad(set_to_none=True)
