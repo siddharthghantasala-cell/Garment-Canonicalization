@@ -1,0 +1,34 @@
+# Fine-tuning with the pyramid-noise recipe (Nov 24): adapter frozen, coarse noise hides the
+# target's silhouette at high noise levels. Same exit-driven checkpointing as finetune.sub.
+# Submit from your work folder:   condor_submit garment-canon/chtc/finetune_pyr.sub
+# Before submitting: replace CHANGE_ME below with your staging path (README, one-time setup 2),
+# and put synthetic_procedural_train.tar.gz (unpacks to data/synthetic/procedural_train/) there.
+STAGING    = osdf:///chtc/staging/CHANGE_ME
+RUN        = pyr_frozen_lr5e5
+DATA_FILES = $(STAGING)/synthetic_procedural_train.tar.gz
+DATA_ROOTS = [data/synthetic/procedural_train]
+CHUNK      = 1000
+
+universe        = container
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+executable      = garment-canon/chtc/run_job.sh
+arguments       = garment-canon/scripts/03_finetune.py garment-canon/configs/finetune_lora.yaml out_dir=run_$(RUN) data_roots=$(DATA_ROOTS) max_steps=3000 batch_size=4 grad_accum=2 lr=5.0e-5 adapter_lr_mult=0 pyramid_discount=0.8 grad_checkpointing=false save_every=250 keep_every=250 max_steps_this_run=$(CHUNK) pause_exit_code=85
+
+transfer_input_files      = garment-canon.tar.gz, $(DATA_FILES)
+checkpoint_exit_code      = 85
+transfer_checkpoint_files = run_$(RUN)
+transfer_output_files     = run_$(RUN)
+
+log    = logs/finetune_$(RUN)_$(Cluster).log
+output = logs/finetune_$(RUN)_$(Cluster).out
+error  = logs/finetune_$(RUN)_$(Cluster).err
+
+request_gpus        = 1
++WantGPULab         = true
++GPUJobLength       = "short"
+gpus_minimum_memory = 24000
+request_cpus        = 8
+request_memory      = 32GB
+request_disk        = 80GB
+
+queue 1
