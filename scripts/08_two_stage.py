@@ -100,12 +100,25 @@ for s in starts:                                                              # 
     lat = Z_zs + float(sigmas[s]) * EPS2
     imgs[f"two-stage k={s}"] = decode(torch.cat([run(COND[k], lat[k], s) for k in chunks]))
 
-res = {name: metrics(im, Y) for name, im in imgs.items()}
+# per-image scores, so the table can say whether a difference to zero-shot is bigger than noise
+per = {name: [metrics(im[i:i + 1], Y[i:i + 1]) for i in range(a.n)] for name, im in imgs.items()}
+res = {name: {m: float(np.mean([r[m] for r in rows])) for m in ("LPIPS", "SSIM")} for name, rows in per.items()}
+base = per["zero-shot"]
 print(f"{'':>18}  LPIPS   SSIM      (lower LPIPS / higher SSIM = better; {a.n} held-out images)")
 for name, r in res.items():
     print(f"{name:>18}  {r['LPIPS']:.3f}   {r['SSIM']:.3f}")
+print("\ndifference to zero-shot, paired per image (diff +/- standard error; 'better on' = images that improved)."
+      "\nTreat a gain as real only if |diff| > 2 x error and most images improved.")
+for name, rows in per.items():
+    if name == "zero-shot":
+        continue
+    for m, sign in (("LPIPS", -1), ("SSIM", 1)):
+        d = np.array([r[m] - b[m] for r, b in zip(rows, base)])
+        se = d.std(ddof=1) / np.sqrt(len(d))
+        print(f"{name:>18} {m}: diff {d.mean():+.4f} +/- {se:.4f}   better on {(sign * d > 0).sum()}/{a.n}")
+json.dump(per, open(out / "two_stage_per_image.json", "w"), indent=1)
 pil = lambda x: Image.fromarray((x.permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8))
-rows = [[pil(X[i])] + [pil(im[i]) for im in imgs.values()] + [pil(Y[i])] for i in range(a.n)]
+rows = [[pil(X[i])] + [pil(im[i]) for im in imgs.values()] + [pil(Y[i])] for i in range(min(a.n, 12))]    # grid: first 12 images only
 image_grid(rows, ["input"] + list(imgs) + ["target"], cell=160).save(out / "two_stage.jpg", quality=90)
 json.dump(res, open(out / "two_stage.json", "w"), indent=1)
 print(f"wrote {out}/two_stage.json and two_stage.jpg")
