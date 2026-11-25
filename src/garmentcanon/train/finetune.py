@@ -37,6 +37,18 @@ from ..models.lora import configure_trainable, trainable_state_dict
 SIGLIP_NORM = T.Normalize([0.5], [0.5])
 
 
+def pyramid_noise(z0: torch.Tensor, discount: float, levels: int = 4) -> torch.Tensor:
+    """Gaussian noise plus upsampled coarse noise at 1/2, 1/4, ... resolution (weight discount**i).
+    SD v1's top timesteps still hold 7-9% of the target, enough to read the silhouette from z_t;
+    strong coarse noise hides it, so the model has to get the shape from the condition."""
+    b, ch, h, w = z0.shape
+    eps = torch.randn_like(z0)
+    for i in range(1, levels + 1):
+        lo = torch.randn(b, ch, max(h >> i, 1), max(w >> i, 1), device=z0.device)
+        eps = eps + F.interpolate(lo, size=(h, w), mode="bilinear") * discount ** i
+    return eps / eps.std(dim=(1, 2, 3), keepdim=True)
+
+
 def _ckpts(out: Path):
     return sorted(out.glob("step_*.pt"), key=lambda p: int(p.stem.split("_")[1]))
 
@@ -91,7 +103,7 @@ def train(cfg: dict) -> dict:
         # and the weights would continue from the old run.
         old = st.get("cfg", {})
         keys = ("lr", "adapter_lr_mult", "mode", "lora_rank", "lora_alpha", "batch_size", "grad_accum",
-                "data_roots", "cond_dropout", "warmup_updates")
+                "data_roots", "cond_dropout", "warmup_updates", "pyramid_discount")
         diff = {k: (old.get(k), cfg.get(k)) for k in keys if str(old.get(k)) != str(cfg.get(k))}
         if diff:
             raise SystemExit(f"[resume] {out} holds a run with other settings {diff}: use a new out_dir")
@@ -125,7 +137,8 @@ def train(cfg: dict) -> dict:
                 drop = torch.rand(cond.shape[0], device=dev) < cfg.get("cond_dropout", 0.1)
                 cond = torch.where(drop[:, None, None], torch.zeros_like(cond), cond)   # enables CFG
                 z0 = c.vae.encode(y * 2 - 1).latent_dist.sample() * c.vae_scale
-            eps = torch.randn_like(z0)
+            pd = float(cfg.get("pyramid_discount", 0.0))
+            eps = pyramid_noise(z0, pd) if pd > 0 else torch.randn_like(z0)
             t = torch.randint(0, c.train_scheduler.config.num_train_timesteps, (z0.shape[0],), device=dev)
             zt = c.train_scheduler.add_noise(z0, eps, t)
             with torch.autocast("cuda", dtype=torch.float16, enabled=use_amp):

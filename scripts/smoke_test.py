@@ -95,7 +95,7 @@ def main():
     print(f"[4/5] eval OK: {json.dumps({k: round(v, 3) for k, v in scores.items()})}")
 
     over = dict(cfg, mode="full", out_dir=str(ROOT / "run_overfit"), max_steps=60, lr=1e-3, save_every=1000,
-                log_every=20, cond_dropout=0.0, warmup_updates=0, adapter_lr_mult=1.0)
+                log_every=20, cond_dropout=0.0, warmup_updates=0, adapter_lr_mult=1.0, pyramid_discount=0.0)
     two = ROOT / "synthetic" / "two"
     (two).mkdir(parents=True, exist_ok=True)
     (two / "manifest.jsonl").write_text("\n".join(
