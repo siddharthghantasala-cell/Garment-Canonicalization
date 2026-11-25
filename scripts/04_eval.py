@@ -43,6 +43,8 @@ ap.add_argument("--limit", type=int, default=None, help="max synthetic test pair
 ap.add_argument("--sampler", choices=["euler", "pndm"], default="euler")
 ap.add_argument("--steps", type=int, default=20)
 ap.add_argument("--guidance", type=float, default=2.0)
+ap.add_argument("--seed", type=int, default=0, help="sampling seed (same for every image)")
+ap.add_argument("--save-all", action="store_true", help="save every synthetic sample, not just the first 16")
 ap.add_argument("--results", default="outputs/tryon")
 ap.add_argument("--out", default="outputs/eval")
 ap.add_argument("--smoke", action="store_true")
@@ -81,10 +83,11 @@ if a.mode == "canon":
         n = min(len(ds), a.limit or len(ds))
         dm = None if a.smoke else DistributionMetrics(dev)
         by_state = defaultdict(list)
+        per_f = (out / "per_image.jsonl").open("w")      # one line per image: needed for paired tests
         for i in range(n):
             item = ds[i]
-            pred_img = model([TF.to_pil_image(item["input"])], steps=a.steps, guidance=a.guidance)[0]
-            if i < 16:
+            pred_img = model([TF.to_pil_image(item["input"])], steps=a.steps, guidance=a.guidance, seed=a.seed)[0]
+            if i < 16 or a.save_all:
                 pred_img.save(out / "samples" / f"synthetic_{i:03d}_{item['state']}.jpg")
             pred, gt = to_t(pred_img)[None], item["target"][None]
             r = pm(pred, gt)
@@ -92,20 +95,25 @@ if a.mode == "canon":
                 gm = item["target_mask"][None] if "target_mask" in item else None
                 r |= visible_hidden_metrics(pm, pred, gt, item["visibility"][None], gm)
             by_state[item["state"]].append(r)
+            per_f.write(json.dumps({"i": i, "key": item["key"], "state": item["state"]} | r) + "\n")
             if dm:
                 dm.update(pred, gt)
+        per_f.close()
         scores["synthetic"] = mean_dict([r for v in by_state.values() for r in v]) | (dm.compute() if dm else {})
         scores |= {f"synthetic/{st}": mean_dict(v) for st, v in sorted(by_state.items())}
     if a.real:
-        by_state = defaultdict(list)
+        by_state, real_rows = defaultdict(list), []
         for gid, s in index_real_photos(a.real).items():
             gt = to_t(Image.fromarray(prepare_flat_gt(load_rgb(s["flat"]))[0]))[None]
             for st in STATES:
                 if st in s:
-                    pred_img = model([Image.fromarray(load_rgb(s[st]))], steps=a.steps, guidance=a.guidance)[0]
+                    pred_img = model([Image.fromarray(load_rgb(s[st]))], steps=a.steps, guidance=a.guidance,
+                                     seed=a.seed)[0]
                     pred_img.save(out / "samples" / f"real_{gid}_{st}.jpg")
                     pred = to_t(Image.fromarray(frame_prediction(np.array(pred_img))))[None]   # same framing as gt
                     by_state[st].append(pm(pred, gt))
+                    real_rows.append({"key": f"{gid}_{st}", "state": st} | by_state[st][-1])
+        (out / "per_image_real.jsonl").write_text("".join(json.dumps(r) + "\n" for r in real_rows))
         scores |= {f"real/{st}": mean_dict(v) for st, v in by_state.items()}
         if by_state:
             scores["real"] = mean_dict([r for v in by_state.values() for r in v])
