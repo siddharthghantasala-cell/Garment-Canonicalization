@@ -10,6 +10,7 @@ lora_alpha: 16
 lr: 1.0e-4            # LoRA tolerates higher LR than full fine-tuning (use ~1e-5 for full)
 adapter_lr_mult: 0.1  # adapter lr = lr x this (0 = freeze adapter; set 1 for mode: adapter)
 warmup_updates: 100   # linear lr warmup, in optimizer updates
+pyramid_discount: 0.8 # coarse-noise weight (0 = plain Gaussian noise); hides the silhouette at high t
 weight_decay: 0.01
 batch_size: 8         # 8 fits an A100-40GB with grad checkpointing; drop to 4 on an L4 and set grad_accum: 2
 grad_accum: 1
