@@ -44,6 +44,7 @@ ap.add_argument("--start", type=int, default=0, help="first synthetic test pair 
 ap.add_argument("--sampler", choices=["euler", "pndm"], default="euler")
 ap.add_argument("--steps", type=int, default=20)
 ap.add_argument("--guidance", type=float, default=2.0)
+ap.add_argument("--vton-steps", type=int, default=50, help="CatVTON denoising steps (same for every condition)")
 ap.add_argument("--seed", type=int, default=0, help="sampling seed (same for every image)")
 ap.add_argument("--save-all", action="store_true", help="save every synthetic sample, not just the first 16")
 ap.add_argument("--results", default="outputs/tryon")
@@ -149,13 +150,13 @@ elif a.mode == "tryon":
                                           CrumpleParams(seed=zlib.crc32(k.encode())))[0])
             raw.save(f["raw_inputs"], quality=95)
         if not f["clean"].exists():
-            vton(person, Image.fromarray(it["cloth"]), mask).save(f["clean"], quality=95)
+            vton(person, Image.fromarray(it["cloth"]), mask, steps=a.vton_steps).save(f["clean"], quality=95)
         if not f["raw"].exists():
-            vton(person, raw, mask).save(f["raw"], quality=95)
+            vton(person, raw, mask, steps=a.vton_steps).save(f["raw"], quality=95)
         if not f[f"ours_{tag}"].exists():
             canon = model([raw], steps=a.steps, guidance=a.guidance)[0]
             canon.save(f[f"canon_{tag}"], quality=95)
-            vton(person, canon, mask).save(f[f"ours_{tag}"], quality=95)
+            vton(person, canon, mask, steps=a.vton_steps).save(f[f"ours_{tag}"], quality=95)
         if i % 20 == 0:
             print(f"{i}/{a.count}", flush=True)
 

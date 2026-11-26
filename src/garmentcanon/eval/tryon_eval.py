@@ -46,12 +46,20 @@ def _load(p: Path, size) -> torch.Tensor:
     return _to_t(Image.open(p).convert("RGB").resize(size, Image.BICUBIC))[None]
 
 
+def _is_black(p: Path) -> bool:
+    """CatVTON's built-in safety filter returns an all-black image when it (wrongly) flags a result."""
+    a = _to_t(Image.open(p).convert("RGB").resize((64, 64)))
+    return float(a.max()) < 0.1
+
+
 def score_tryon_folder(results_dir: str | Path, gt_dir: str | Path, tag: str = "zeroshot",
                        mask_dir: str | Path | None = None, size=(768, 1024), device="cuda") -> dict:
     """Score results_dir/{clean, raw, ours_<tag>}/<key>.jpg against gt_dir/<key>.jpg.
 
-    Only keys present in ALL three folders are scored, so the three rows are always computed
-    on the same images. Writes results_dir/scores_<tag>.json.
+    Only keys present in ALL three folders AND in every other ours_* folder are scored, so every
+    condition and every model is computed on the same images. Keys where any of those images is
+    all black (CatVTON's safety filter) are dropped everywhere and counted in "excluded_black".
+    Writes results_dir/scores_<tag>.json.
     """
     results_dir, gt_dir = Path(results_dir), Path(gt_dir)
     conds = {"clean": "clean", "raw": "raw", "ours": f"ours_{tag}"}
@@ -59,7 +67,15 @@ def score_tryon_folder(results_dir: str | Path, gt_dir: str | Path, tag: str = "
     for folder in conds.values():
         ks = {p.stem for p in (results_dir / folder).glob("*.jpg")}
         keys = ks if keys is None else keys & ks
+    others = [d.name for d in results_dir.glob("ours_*") if d.is_dir() and d.name != conds["ours"]]
+    for folder in others:
+        keys &= {p.stem for p in (results_dir / folder).glob("*.jpg")}
     keys = sorted(k for k in (keys or set()) if (gt_dir / f"{k}.jpg").exists())
+    folders = list(conds.values()) + others
+    black = [k for k in keys if any(_is_black(results_dir / f / f"{k}.jpg") for f in folders)]
+    keys = [k for k in keys if k not in black]
+    if black:
+        print(f"[score] dropped {len(black)} pair(s) with a black (safety-filtered) image: {black}", flush=True)
     if not keys:
         raise FileNotFoundError(f"no keys common to {list(conds.values())} under {results_dir}")
 
@@ -85,5 +101,7 @@ def score_tryon_folder(results_dir: str | Path, gt_dir: str | Path, tag: str = "
     table["gap_closed"] = {n: gap_closed(table["raw"][n], table["ours"][n], table["clean"][n], low)
                            for n, low in LOWER_IS_BETTER.items()
                            if all(n in table[c] for c in conds)}
+    table["excluded_black"] = black
+    table["compared_models"] = [conds["ours"]] + others
     (results_dir / f"scores_{tag}.json").write_text(json.dumps(table, indent=2))
     return table
