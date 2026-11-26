@@ -1,7 +1,9 @@
 """CatVTON wrapper: the downstream try-on model we do NOT train.
 
 Setup (once):
-    git clone https://github.com/Zheng-Chong/CatVTON third_party/CatVTON
+    git clone https://huggingface.co/spaces/zhengchong/CatVTON third_party/CatVTON
+    (the GitHub repo github.com/Zheng-Chong/CatVTON stopped being public by Nov 2026; the authors'
+    Hugging Face Space has the same model/ and utils.py)
     pip install -r third_party/CatVTON/requirements.txt   # skip detectron2/densepose: we use dataset masks
 
 Matches the repo's app.py / inference.py: CatVTONPipeline(base_ckpt, attn_ckpt, "mix", ...),
@@ -26,10 +28,12 @@ SIZE = (768, 1024)  # (width, height)
 
 class CatVTONRunner:
     def __init__(self, device: str = "cuda", base_ckpt: str = "booksforcharlie/stable-diffusion-inpainting",
-                 attn_repo: str = "zhengchong/CatVTON", dtype: str = "bf16"):
+                 attn_repo: str = "zhengchong/CatVTON", dtype: str = "auto"):
         if not CATVTON_DIR.exists():
             raise FileNotFoundError(f"clone CatVTON into {CATVTON_DIR} first (see docstring)")
         sys.path.insert(0, str(CATVTON_DIR))
+        if dtype == "auto":   # bf16 needs an Ampere-or-newer GPU (A100, L4); a T4 gets fp16
+            dtype = "bf16" if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else "fp16"
         from diffusers.image_processor import VaeImageProcessor
         from huggingface_hub import snapshot_download
         from model.pipeline import CatVTONPipeline
