@@ -40,6 +40,7 @@ ap.add_argument("--viton")
 ap.add_argument("--pairs-file", default=None, help="TryOffDiff's cleaned test list (1,990 pairs)")
 ap.add_argument("--count", type=int, default=300)
 ap.add_argument("--limit", type=int, default=None, help="max synthetic test pairs")
+ap.add_argument("--start", type=int, default=0, help="first synthetic test pair (to split a long run into chunks)")
 ap.add_argument("--sampler", choices=["euler", "pndm"], default="euler")
 ap.add_argument("--steps", type=int, default=20)
 ap.add_argument("--guidance", type=float, default=2.0)
@@ -80,11 +81,11 @@ if a.mode == "canon":
     (out / "samples").mkdir(parents=True, exist_ok=True)
     if a.test:
         ds = SyntheticPairs([a.test], with_visibility=True)
-        n = min(len(ds), a.limit or len(ds))
+        n = min(len(ds), a.start + (a.limit or len(ds)))
         dm = None if a.smoke else DistributionMetrics(dev)
         by_state = defaultdict(list)
         per_f = (out / "per_image.jsonl").open("w")      # one line per image: needed for paired tests
-        for i in range(n):
+        for i in range(a.start, n):          # i stays the global index, so chunk files can be concatenated
             item = ds[i]
             pred_img = model([TF.to_pil_image(item["input"])], steps=a.steps, guidance=a.guidance, seed=a.seed)[0]
             if i < 16 or a.save_all:
